@@ -1,6 +1,6 @@
-use fuinjutsu::{impl_sealed, sealed};
+use fuinjutsu::{impl_supertrait_sealed, supertrait_sealed};
 
-#[sealed]
+#[supertrait_sealed]
 pub trait Washable {
     fn wash(&self, times: i32) -> bool;
 }
@@ -9,7 +9,7 @@ pub struct Clothing {
     layers: i32,
 }
 
-#[impl_sealed]
+#[impl_supertrait_sealed]
 impl Washable for Clothing {
     fn wash(&self, times: i32) -> bool {
         self.layers * times > 0
