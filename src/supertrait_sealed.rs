@@ -7,10 +7,10 @@ use syn::{
     TraitBound, TraitBoundModifier, TypeParamBound,
 };
 
-pub fn make_supertrait_seal(private_trait: impl Borrow<ItemTrait>) -> TokenStream {
-    let sealing_trait = make_sealing_trait(&private_trait.borrow().ident);
+pub fn make_supertrait_seal(private_trait: ItemTrait) -> syn::Result<TokenStream> {
+    let sealing_trait = make_sealing_trait(&private_trait.ident);
 
-    let mut private_trait: ItemTrait = private_trait.borrow().clone();
+    let mut private_trait = private_trait.clone();
 
     private_trait
         .supertraits
@@ -24,29 +24,45 @@ pub fn make_supertrait_seal(private_trait: impl Borrow<ItemTrait>) -> TokenStrea
     let sealing_trait_mod_ident = sealing_trait.enclosing_module;
     let sealing_trait_ident = sealing_trait.trait_ident;
 
-    quote! {
+    Ok(quote! {
         mod #sealing_trait_mod_ident {
             pub trait #sealing_trait_ident {}
         }
 
         #private_trait
-    }
+    })
 }
 
-pub fn make_supertrait_seal_impl(private_trait_impl: impl Borrow<ItemImpl>) -> TokenStream {
-    let private_trait_impl: &ItemImpl = private_trait_impl.borrow();
-    let trait_ = private_trait_impl.clone().trait_.unwrap();
+pub fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<TokenStream> {
+    let private_trait_impl = private_trait_impl.clone();
 
-    let private_trait = trait_.1.get_ident().unwrap();
+    let private_trait = match private_trait_impl.trait_ {
+        Some((_, ref trait_, _)) => match trait_.get_ident() {
+            Some(trait_ident) => trait_ident.clone(),
+            None => {
+                return Err(syn::Error::new_spanned(
+                    trait_,
+                    "expected trait name not path to trait",
+                ))
+            }
+        },
+        None => {
+            return Err(syn::Error::new_spanned(
+                private_trait_impl,
+                "expected trait implementation",
+            ))
+        }
+    };
+
     let self_ = private_trait_impl.clone().self_ty;
 
     let sealing_trait_path = make_sealing_trait(private_trait).trait_path;
 
-    quote! {
+    Ok(quote! {
         impl #sealing_trait_path for #self_ {}
 
         #private_trait_impl
-    }
+    })
 }
 
 struct SealingTrait {
