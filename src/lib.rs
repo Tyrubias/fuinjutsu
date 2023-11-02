@@ -10,34 +10,36 @@ use syn::{
     PathSegment, Token, TraitBound, TraitBoundModifier, TypeParamBound,
 };
 
-struct PrivateTrait {
-    private_module: Ident,
-    supertrait_ident: Ident,
-    full_trait_path: Path,
+struct SealingTrait {
+    enclosing_module: Ident,
+    trait_ident: Ident,
+    trait_path: Path,
 }
 
 #[proc_macro_attribute]
 pub fn sealed(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut r#trait = parse_macro_input!(item as ItemTrait);
+    let mut private_trait = parse_macro_input!(item as ItemTrait);
 
-    let private_trait = get_sealed_trait_path(&r#trait.ident);
+    let sealing_trait = make_sealing_trait(&private_trait.ident);
 
-    r#trait.supertraits.push(TypeParamBound::Trait(TraitBound {
-        paren_token: None,
-        modifier: TraitBoundModifier::None,
-        lifetimes: None,
-        path: private_trait.full_trait_path,
-    }));
+    private_trait
+        .supertraits
+        .push(TypeParamBound::Trait(TraitBound {
+            paren_token: None,
+            modifier: TraitBoundModifier::None,
+            lifetimes: None,
+            path: sealing_trait.trait_path,
+        }));
 
-    let private_module = private_trait.private_module;
-    let supertrait_ident = private_trait.supertrait_ident;
+    let sealing_trait_mod_ident = sealing_trait.enclosing_module;
+    let sealing_trait_ident = sealing_trait.trait_ident;
 
     quote! {
-        mod #private_module {
-            pub trait #supertrait_ident {}
+        mod #sealing_trait_mod_ident {
+            pub trait #sealing_trait_ident {}
         }
 
-        #r#trait
+        #private_trait
     }
     .into()
 }
@@ -49,17 +51,17 @@ pub fn impl_sealed(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let private_trait = trait_.1.get_ident().unwrap();
     let self_ = impl_block.clone().self_ty;
 
-    let sealed_trait_path = get_sealed_trait_path(private_trait).full_trait_path;
+    let sealing_trait_path = make_sealing_trait(private_trait).trait_path;
 
     quote! {
-        impl #sealed_trait_path for #self_ {}
+        impl #sealing_trait_path for #self_ {}
 
         #impl_block
     }
     .into()
 }
 
-fn get_sealed_trait_path(trait_ident: impl Borrow<Ident>) -> PrivateTrait {
+fn make_sealing_trait(trait_ident: impl Borrow<Ident>) -> SealingTrait {
     let mut private_trait_segments = Punctuated::new();
 
     private_trait_segments.push(PathSegment {
@@ -87,10 +89,10 @@ fn get_sealed_trait_path(trait_ident: impl Borrow<Ident>) -> PrivateTrait {
         arguments: PathArguments::None,
     });
 
-    PrivateTrait {
-        private_module,
-        supertrait_ident,
-        full_trait_path: Path {
+    SealingTrait {
+        enclosing_module: private_module,
+        trait_ident: supertrait_ident,
+        trait_path: Path {
             leading_colon: None,
             segments: private_trait_segments,
         },
