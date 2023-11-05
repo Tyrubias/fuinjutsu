@@ -37,14 +37,9 @@ pub fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<To
     let private_trait_impl = private_trait_impl.clone();
 
     let private_trait = match private_trait_impl.trait_ {
-        Some((_, ref trait_, _)) => match trait_.get_ident() {
-            Some(trait_ident) => trait_ident.clone(),
-            None => {
-                return Err(syn::Error::new_spanned(
-                    trait_,
-                    "expected trait name not path to trait",
-                ))
-            }
+        Some((_, ref trait_, _)) => match trait_.segments.last() {
+            Some(segment) => segment.ident.clone(),
+            None => return Err(syn::Error::new_spanned(trait_, "expected trait with name")),
         },
         None => {
             return Err(syn::Error::new_spanned(
