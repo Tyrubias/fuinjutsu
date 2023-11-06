@@ -1,32 +1,30 @@
-use std::borrow::Borrow;
-
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    punctuated::Punctuated, Ident, ItemImpl, ItemTrait, Path, PathArguments, PathSegment, Token,
-    TraitBound, TraitBoundModifier, TypeParamBound,
+    punctuated::{Pair, Punctuated},
+    Ident, ItemImpl, ItemTrait, Path, PathArguments, PathSegment, TraitBound, TraitBoundModifier,
+    TypeParamBound,
 };
 
-pub fn make_supertrait_seal(private_trait: ItemTrait) -> syn::Result<TokenStream> {
-    let sealing_trait = make_sealing_trait(&private_trait.ident);
+pub fn make_supertrait_seal(mut private_trait: ItemTrait) -> syn::Result<TokenStream> {
+    let SealingTrait {
+        module,
+        supertrait,
+        trait_path,
+    } = make_sealing_trait(&private_trait.ident);
 
-    let mut private_trait = private_trait.clone();
+    let trait_bound = TypeParamBound::Trait(TraitBound {
+        paren_token: None,
+        modifier: TraitBoundModifier::None,
+        lifetimes: None,
+        path: trait_path,
+    });
 
-    private_trait
-        .supertraits
-        .push(TypeParamBound::Trait(TraitBound {
-            paren_token: None,
-            modifier: TraitBoundModifier::None,
-            lifetimes: None,
-            path: sealing_trait.trait_path,
-        }));
-
-    let sealing_trait_mod_ident = sealing_trait.enclosing_module;
-    let sealing_trait_ident = sealing_trait.trait_ident;
+    private_trait.supertraits.push(trait_bound);
 
     Ok(quote! {
-        mod #sealing_trait_mod_ident {
-            pub trait #sealing_trait_ident {}
+        mod #module {
+            pub trait #supertrait {}
         }
 
         #private_trait
@@ -34,13 +32,8 @@ pub fn make_supertrait_seal(private_trait: ItemTrait) -> syn::Result<TokenStream
 }
 
 pub fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<TokenStream> {
-    let private_trait_impl = private_trait_impl.clone();
-
-    let private_trait = match private_trait_impl.trait_ {
-        Some((_, ref trait_, _)) => match trait_.segments.last() {
-            Some(segment) => segment.ident.clone(),
-            None => return Err(syn::Error::new_spanned(trait_, "expected trait with name")),
-        },
+    let mut trait_path = match private_trait_impl.trait_ {
+        Some((_, ref trait_, _)) => trait_.clone(),
         None => {
             return Err(syn::Error::new_spanned(
                 private_trait_impl,
@@ -49,57 +42,80 @@ pub fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<To
         }
     };
 
+    let private_trait = match trait_path.segments.pop() {
+        Some(
+            Pair::Punctuated(
+                PathSegment {
+                    ident,
+                    arguments: _,
+                },
+                _,
+            )
+            | Pair::End(PathSegment {
+                ident,
+                arguments: _,
+            }),
+        ) => ident,
+        None => return Err(syn::Error::new_spanned(trait_path, "expected trait path")),
+    };
+
+    let SealingTrait {
+        module,
+        supertrait,
+        trait_path: _,
+    } = make_sealing_trait(&private_trait);
+
+    trait_path.segments.push(PathSegment {
+        ident: module,
+        arguments: PathArguments::None,
+    });
+
+    trait_path.segments.push(PathSegment {
+        ident: supertrait,
+        arguments: PathArguments::None,
+    });
+
     let self_ = private_trait_impl.clone().self_ty;
 
-    let sealing_trait_path = make_sealing_trait(private_trait).trait_path;
-
     Ok(quote! {
-        impl #sealing_trait_path for #self_ {}
+        impl #trait_path for #self_ {}
 
         #private_trait_impl
     })
 }
 
 struct SealingTrait {
-    enclosing_module: Ident,
-    trait_ident: Ident,
+    module: Ident,
+    supertrait: Ident,
     trait_path: Path,
 }
 
-fn make_sealing_trait(trait_ident: impl Borrow<Ident>) -> SealingTrait {
-    let mut private_trait_segments = Punctuated::new();
+fn make_sealing_trait(trait_ident: &Ident) -> SealingTrait {
+    let module_name = format!("private_trait_{}", trait_ident.to_string().to_lowercase());
+    let module = Ident::new(&module_name, trait_ident.span());
 
-    private_trait_segments.push(PathSegment {
-        ident: Token![crate](Span::mixed_site()).into(),
+    let supertrait = Ident::new("Sealed", Span::call_site());
+
+    let mut trait_segments = Punctuated::new();
+
+    trait_segments.push(PathSegment {
+        ident: module.clone(),
         arguments: PathArguments::None,
     });
 
-    let private_module = Ident::new(
-        &format!(
-            "private_trait_{}",
-            trait_ident.borrow().to_string().to_lowercase()
-        ),
-        trait_ident.borrow().span(),
-    );
-
-    private_trait_segments.push(PathSegment {
-        ident: private_module.clone(),
+    trait_segments.push(PathSegment {
+        ident: supertrait.clone(),
         arguments: PathArguments::None,
     });
 
-    let supertrait_ident = Ident::new("Sealed", Span::mixed_site());
-
-    private_trait_segments.push(PathSegment {
-        ident: supertrait_ident.clone(),
-        arguments: PathArguments::None,
-    });
+    let trait_path = Path {
+        leading_colon: None,
+        segments: trait_segments,
+    };
 
     SealingTrait {
-        enclosing_module: private_module,
-        trait_ident: supertrait_ident,
-        trait_path: Path {
-            leading_colon: None,
-            segments: private_trait_segments,
-        },
+        module,
+        supertrait,
+        trait_path,
     }
 }
