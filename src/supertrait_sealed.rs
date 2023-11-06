@@ -6,7 +6,7 @@ use syn::{
     TypeParamBound,
 };
 
-pub fn make_supertrait_seal(mut private_trait: ItemTrait) -> syn::Result<TokenStream> {
+pub(crate) fn make_supertrait_seal(mut private_trait: ItemTrait) -> syn::Result<TokenStream> {
     let SealingTrait {
         module,
         supertrait,
@@ -31,7 +31,7 @@ pub fn make_supertrait_seal(mut private_trait: ItemTrait) -> syn::Result<TokenSt
     })
 }
 
-pub fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<TokenStream> {
+pub(crate) fn make_supertrait_seal_impl(private_trait_impl: ItemImpl) -> syn::Result<TokenStream> {
     let mut trait_path = match private_trait_impl.trait_ {
         Some((_, ref trait_, _)) => trait_.clone(),
         None => {
