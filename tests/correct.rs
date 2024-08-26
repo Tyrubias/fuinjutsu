@@ -1,4 +1,5 @@
 use fuinjutsu::{impl_method_sealed, impl_supertrait_sealed, method_sealed, supertrait_sealed};
+use private_trait_dryable::Token;
 
 #[supertrait_sealed]
 pub trait Washable {
@@ -41,6 +42,12 @@ pub fn wash_succeeds() {
     let clothing = Clothing { layers: 5 };
 
     assert!(clothing.wash(20));
-    assert!(clothing.dry(20));
+}
+
+#[test]
+pub fn dry_succeeds() {
+    let clothing = Clothing { layers: 5 };
+
+    assert!(clothing.dry(20, Token));
     assert!(clothing.dry_quickly(20));
 }

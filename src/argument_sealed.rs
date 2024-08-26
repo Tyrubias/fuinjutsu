@@ -3,8 +3,8 @@ use std::vec;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    parse_quote, punctuated::Punctuated, FnArg, ImplItem, ItemImpl, ItemTrait, Pat, PatType,
-    PatWild, Path, PathArguments, PathSegment, Token, TraitItem, Type, TypePath,
+    punctuated::Punctuated, FnArg, ImplItem, ItemImpl, ItemTrait, Pat, PatType, PatWild, Path,
+    PathArguments, PathSegment, Token, TraitItem, Type, TypePath,
 };
 
 pub(crate) fn make_method_seal(mut private_trait: ItemTrait) -> syn::Result<TokenStream> {
@@ -65,8 +65,6 @@ pub(crate) fn make_method_seal_impl(mut private_trait_impl: ItemImpl) -> syn::Re
         unit,
     } = SealingStruct::new(private_trait);
 
-    let mut new_funcs = Vec::new();
-
     for item in &mut private_trait_impl.items {
         if let ImplItem::Fn(ref mut func) = item {
             let marker_idx = func
@@ -77,45 +75,10 @@ pub(crate) fn make_method_seal_impl(mut private_trait_impl: ItemImpl) -> syn::Re
             func.attrs.retain(|attr| !attr.path().is_ident(&marker));
 
             if marker_idx.is_some() {
-                let orig_func_ident = format_ident!("{}__original_", func.sig.ident);
-                let mut orig_func = func.clone();
-
-                orig_func.sig.ident = orig_func_ident.clone();
-
-                new_funcs.push(ImplItem::Fn(orig_func));
-
-                let args = func.sig.inputs.iter().map(|arg| match arg {
-                    syn::FnArg::Receiver(_) => quote! { self },
-                    syn::FnArg::Typed(pat_type) => {
-                        let pat = pat_type.pat.clone();
-                        quote! { #pat }
-                    }
-                });
-
-                let unit_arg = match unit {
-                    FnArg::Receiver(_) => {
-                        return Err(syn::Error::new_spanned(unit, "unexpected receiver"))
-                    }
-                    FnArg::Typed(ref pat_type) => {
-                        let ty = pat_type.ty.clone();
-                        quote! { #ty }
-                    }
-                };
-
-                let cloned_args = args.clone();
-
-                dbg!(quote! {
-                    #orig_func_ident(#(#cloned_args),* #unit_arg)
-                });
-
-                func.block.stmts = vec![parse_quote! {
-                    #orig_func_ident(#(#args),* #unit_arg)
-                }];
+                func.sig.inputs.push(unit.clone());
             }
         }
     }
-
-    private_trait_impl.items.extend(new_funcs);
 
     Ok(quote! {
         #private_trait_impl
